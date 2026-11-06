@@ -23,6 +23,9 @@ PIP := .venv/bin/pip
 # -T disables TTY allocation (required for non-interactive make)
 # -v ON_ERROR_STOP=1 makes psql exit non-zero on the first SQL error,
 # otherwise `make` would report success on a failed script.
+#
+# SQL files are piped through stdin (`< file`) rather than `-f file`, because
+# psql runs INSIDE the postgres container and cannot see the host's sql/ dir.
 PSQL := docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U $(DB_USER) -d $(DB_NAME)
 
 .PHONY: help install up down reset reset-soft wait-db init-db \
@@ -95,7 +98,7 @@ wait-db:  ## Block until Postgres accepts connections
 	echo "Postgres did not become ready in 60s" >&2; exit 1
 
 init-db:  ## Create bronze/silver/gold schemas and gold.dq_results
-	$(PSQL) -f sql/00_init_schemas.sql
+	$(PSQL) < sql/00_init_schemas.sql
 
 # ---------------------------------------------------------------------------
 # Pipeline
@@ -120,7 +123,7 @@ refresh-mv:  ## Refresh materialized views CONCURRENTLY
 	$(PSQL) -c "REFRESH MATERIALIZED VIEW CONCURRENTLY gold.mv_churn_by_issue_channel;"
 
 olap-demo:  ## Run the 5 OLAP demonstrations (+ CUBE bonus)
-	$(PSQL) -f sql/05_olap_demos.sql
+	$(PSQL) < sql/05_olap_demos.sql
 
 validate:  ## Run data-quality rules, write gold.dq_results
 	$(PY) src/04_validate.py
