@@ -1,0 +1,52 @@
+# ---------------------------------------------------------------------------
+# Medallion Data Warehouse — local stack
+#   postgres : the warehouse (bronze / silver / gold schemas)
+#   metabase : BI / OLAP front-end
+# ---------------------------------------------------------------------------
+services:
+  postgres:
+    image: postgres:16
+    container_name: dw_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-dw}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-dw}
+      POSTGRES_DB: ${DB_NAME:-warehouse}
+      # Deterministic collation so ORDER BY / GROUP BY on text is reproducible
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-dw} -d ${DB_NAME:-warehouse}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  metabase:
+    image: metabase/metabase:latest
+    container_name: dw_metabase
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # Metabase application DB (H2) persisted in a named volume so that
+      # dashboards survive `make down` / `make up`. Only `make reset`
+      # (docker compose down -v) wipes it.
+      MB_DB_TYPE: h2
+      MB_DB_FILE: /metabase-data/metabase.db
+      # Give Metabase a bit more heap for the 112k-row fact table
+      JAVA_TIMEZONE: UTC
+    ports:
+      - "${METABASE_PORT:-3000}:3000"
+    volumes:
+      - metabase_data:/metabase-data
+
+volumes:
+  pgdata:
+    name: dw_pgdata
+  metabase_data:
+    name: dw_metabase_data

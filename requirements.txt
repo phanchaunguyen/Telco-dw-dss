@@ -1,0 +1,11 @@
+# ---------------------------------------------------------------------------
+# Pinned dependencies for the Medallion DW pipeline.
+# Python 3.11+ required (tested on 3.12).
+# ---------------------------------------------------------------------------
+pandas==2.2.3
+SQLAlchemy==2.0.36
+psycopg2-binary==2.9.10
+huggingface_hub==0.26.2
+python-dotenv==1.0.1
+pyarrow==18.0.0
+tqdm==4.66.5
