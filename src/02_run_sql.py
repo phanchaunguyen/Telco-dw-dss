@@ -36,11 +36,21 @@ def run_file(engine, filename: str, batch_id: str) -> None:
     sql = path.read_text(encoding="utf-8").replace("{{batch_id}}", batch_id)
 
     print(f"\n[run] {filename}")
-    # exec_driver_sql sends the whole script as one multi-statement command,
-    # which is what psql does. The file manages its own BEGIN/COMMIT.
-    with engine.connect() as conn:
-        conn.exec_driver_sql(sql)
-        conn.commit()
+    # Use the raw DBAPI connection: psycopg2 only performs %-interpolation when
+    # arguments are supplied, so literal '%' characters inside SQL comments or
+    # expressions pass through untouched. SQLAlchemy's exec_driver_sql would
+    # try to interpret them as bind parameters.
+    raw = engine.raw_connection()
+    try:
+        cur = raw.cursor()
+        cur.execute(sql)
+        raw.commit()
+        cur.close()
+    except Exception:
+        raw.rollback()
+        raise
+    finally:
+        raw.close()
     print(f"[ok ] {filename}")
 
 
