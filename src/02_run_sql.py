@@ -80,13 +80,33 @@ def report(engine) -> None:
                 print(f"  {label:38s} {'n/a':>10}  ({type(exc).__name__})")
 
 
+def resolve_batch_id(engine) -> str:
+    """
+    Return the batch to process.
+
+    Each script generates its own BATCH_ID at import time, so the value in
+    this process is NOT the one 01_load_bronze.py wrote. The authoritative
+    "current batch" is therefore the newest ingest_batch_id present in bronze.
+    Falls back to config.BATCH_ID only when bronze is empty.
+    """
+    with engine.connect() as conn:
+        latest = conn.execute(
+            text("SELECT MAX(ingest_batch_id) FROM bronze.bronze_customer_billing")
+        ).scalar()
+    if latest:
+        return str(latest)
+    print("[warn] bronze is empty; falling back to config.BATCH_ID")
+    return config.BATCH_ID
+
+
 def main() -> int:
     engine = create_engine(config.DATABASE_URL)
-    print(f"batch_id = {config.BATCH_ID}")
+    batch_id = resolve_batch_id(engine)
+    print(f"batch_id = {batch_id}")
 
     try:
         for filename in SQL_FILES:
-            run_file(engine, filename, config.BATCH_ID)
+            run_file(engine, filename, batch_id)
     except Exception as exc:  # noqa: BLE001
         print(f"\n[error] {exc}", file=sys.stderr)
         return 1
