@@ -392,7 +392,7 @@ def parameter_mappings(
 
 Q: dict[str, str] = {
     # ---------------- Overview ----------------
-    "KPI · Tổng quan": """
+    "Tổng quan: quy mô & churn": """
 SELECT
     COUNT(*)                                              AS billing_cycles,
     COUNT(DISTINCT customer_key)                          AS customers,
@@ -402,7 +402,7 @@ SELECT
           / COUNT(*), 2)                                  AS silent_pct
 FROM gold.fact_billing_support
 """,
-    "Cohort retention & ARPU": """
+    "Tỷ lệ khách còn lại & ARPU theo tháng": """
 SELECT
     month_start,
     ROUND(100.0 * active_customers
@@ -414,12 +414,12 @@ WHERE billing_cycles >= 1000
 [[AND month_start <= {{d_end}}::date]]
 ORDER BY month_start
 """,
-    "Churn theo issue × channel": """
+    "Tỷ lệ churn theo loại vấn đề và kênh": """
 SELECT issue_type, support_channel, churn_rate
 FROM gold.mv_churn_by_issue_channel
 ORDER BY issue_type, support_channel
 """,
-    "Im lặng vs có liên hệ": """
+    "Churn: khách im lặng vs có liên hệ": """
 SELECT
     CASE WHEN support_interaction_count = 0
          THEN 'Không liên hệ' ELSE 'Có liên hệ' END        AS segment,
@@ -429,7 +429,7 @@ FROM gold.fact_billing_support
 GROUP BY 1
 ORDER BY churn_rate
 """,
-    "Churn theo số lần liên hệ": """
+    "Churn tăng dần theo số lần liên hệ": """
 SELECT
     support_interaction_count                              AS so_lan_lien_he,
     COUNT(*)                                               AS cycles,
@@ -455,7 +455,7 @@ WHERE billing_cycles >= 1000
 [[AND month_start <= {{d_end}}::date]]
 ORDER BY month_start
 """,
-    "Tỷ lệ quá hạn": """
+    "Tỷ lệ quá hạn thanh toán": """
 SELECT month_start, overdue_rate
 FROM gold.mv_billing_monthly
 WHERE billing_cycles >= 1000
@@ -463,7 +463,7 @@ WHERE billing_cycles >= 1000
 [[AND month_start <= {{d_end}}::date]]
 ORDER BY month_start
 """,
-    "Discount & late fee (% doanh thu)": """
+    "Giảm giá & phí phạt (% doanh thu)": """
 SELECT
     month_start,
     ROUND(100.0 * total_discount / NULLIF(total_revenue, 0), 2) AS discount_pct,
@@ -474,7 +474,7 @@ WHERE billing_cycles >= 1000
 [[AND month_start <= {{d_end}}::date]]
 ORDER BY month_start
 """,
-    "Khách không liên hệ support": """
+    "Số khách không liên hệ support": """
 SELECT month_start, no_support_customers
 FROM gold.mv_billing_monthly
 WHERE billing_cycles >= 1000
@@ -483,7 +483,7 @@ WHERE billing_cycles >= 1000
 ORDER BY month_start
 """,
     # ---------------- Support Ops ----------------
-    "Tickets theo kênh": """
+    "Số ticket theo kênh": """
 SELECT support_channel, SUM(tickets) AS tickets
 FROM gold.mart_support_monthly
 WHERE 1 = 1
@@ -494,7 +494,7 @@ WHERE 1 = 1
 GROUP BY 1
 ORDER BY tickets DESC
 """,
-    "Thời gian xử lý theo kênh": """
+    "Thời gian xử lý TB theo kênh": """
 SELECT
     support_channel,
     ROUND(SUM(avg_resolution_min * tickets) / SUM(tickets), 2) AS avg_resolution_min
@@ -507,7 +507,7 @@ WHERE 1 = 1
 GROUP BY 1
 ORDER BY avg_resolution_min
 """,
-    "Phân bố CSAT": """
+    "Phân bố điểm hài lòng (CSAT)": """
 SELECT
     satisfaction_score,
     COUNT(*)                                           AS cycles,
@@ -517,7 +517,7 @@ WHERE support_interaction_count > 0
 GROUP BY 1
 ORDER BY 1
 """,
-    "Escalation rate theo kênh": """
+    "Tỷ lệ escalate theo kênh": """
 SELECT
     support_channel,
     ROUND(100.0 * SUM(escalations) / SUM(tickets), 2) AS escalation_rate
@@ -530,7 +530,7 @@ WHERE 1 = 1
 GROUP BY 1
 ORDER BY escalation_rate DESC
 """,
-    "CSAT theo issue × channel": """
+    "Điểm hài lòng theo loại vấn đề và kênh": """
 SELECT
     issue_type,
     support_channel,
@@ -545,7 +545,7 @@ GROUP BY 1, 2
 ORDER BY issue_type, support_channel
 """,
     # ---------------- Churn Risk ----------------
-    "Churn theo payment status": """
+    "Churn theo trạng thái thanh toán": """
 SELECT
     ps.payment_status,
     COUNT(*) AS cycles,
@@ -557,7 +557,7 @@ WHERE 1 = 1
 GROUP BY 1
 ORDER BY churn_rate DESC
 """,
-    "Churn theo CSAT": """
+    "Churn theo điểm hài lòng": """
 SELECT
     satisfaction_score,
     COUNT(*) AS cycles,
@@ -567,7 +567,7 @@ WHERE support_interaction_count > 0
 GROUP BY 1
 ORDER BY 1
 """,
-    "Churn theo escalation": """
+    "Churn: có escalate vs không escalate": """
 SELECT
     CASE WHEN escalation_flag THEN 'Có escalate' ELSE 'Không' END AS escalation,
     COUNT(*) AS cycles,
@@ -577,7 +577,7 @@ WHERE support_interaction_count > 0
 GROUP BY 1
 ORDER BY churn_rate DESC
 """,
-    "Cảnh báo sớm: liên hệ kỳ t → churn kỳ t+1": """
+    "Liên hệ kỳ này có báo trước churn kỳ sau?": """
 WITH seq AS (
     SELECT
         customer_key,
@@ -598,7 +598,7 @@ WHERE churn_flag = FALSE
 GROUP BY 1
 ORDER BY churn_ky_sau DESC
 """,
-    "Chân dung khách churn": """
+    "Khách churn khác khách ở lại thế nào?": """
 SELECT
     CASE WHEN churn_flag THEN 'Churn' ELSE 'Ở lại' END AS nhom,
     ROUND(AVG(call_minutes)::numeric, 1)              AS avg_call_min,
@@ -609,7 +609,7 @@ FROM gold.fact_billing_support
 GROUP BY 1
 ORDER BY 1
 """,
-    "Bảng xếp hạng tín hiệu (lift)": """
+    "Xếp hạng tín hiệu rủi ro (lift)": """
 WITH base AS (
     SELECT AVG(CASE WHEN churn_flag THEN 1.0 ELSE 0.0 END) AS base_rate
     FROM gold.fact_billing_support
@@ -661,7 +661,7 @@ ORDER BY lift DESC
     # =====================================================================
     # OLAP operations
     # =====================================================================
-    "OLAP-1 · ROLL-UP (year → quarter → month)": """
+    "OLAP 1 · Roll-up: năm → quý → tháng": """
 SELECT
     d.year, d.quarter, d.month,
     GROUPING(d.year, d.quarter, d.month) AS grouping_level,
@@ -679,7 +679,7 @@ WHERE d.is_unknown = FALSE
 GROUP BY ROLLUP (d.year, d.quarter, d.month)
 ORDER BY d.year NULLS LAST, d.quarter NULLS LAST, d.month NULLS LAST
 """,
-    "OLAP-2 · DRILL-DOWN (year → month)": """
+    "OLAP 2 · Drill-down: năm → tháng": """
 SELECT
     CASE GROUPING(d.year, d.month)
         WHEN 0 THEN '2. month detail'
@@ -695,7 +695,7 @@ WHERE d.is_unknown = FALSE
 GROUP BY GROUPING SETS ((d.year), (d.year, d.month))
 ORDER BY d.year, GROUPING(d.year, d.month), d.month
 """,
-    "OLAP-3 · SLICE (payment_status = Paid)": """
+    "OLAP 3 · Slice: chỉ kỳ đã thanh toán": """
 SELECT
     it.issue_type,
     ch.support_channel,
@@ -710,7 +710,7 @@ WHERE ps.payment_status = 'Paid'
 GROUP BY it.issue_type, ch.support_channel
 ORDER BY revenue DESC
 """,
-    "OLAP-4 · DICE (year=2022 × Paid/Unpaid × Billing)": """
+    "OLAP 4 · Dice: 2022 × Paid/Unpaid × Billing": """
 SELECT
     d.year, d.quarter,
     ps.payment_status,
@@ -728,7 +728,7 @@ WHERE d.year = 2022
 GROUP BY d.year, d.quarter, ps.payment_status, it.issue_type
 ORDER BY d.quarter, ps.payment_status
 """,
-    "OLAP-5 · PIVOT (issue × channel churn)": """
+    "OLAP 5 · Pivot: churn theo vấn đề × kênh": """
 SELECT
     it.issue_type,
     ROUND(100.0 * AVG(CASE WHEN ch.support_channel = 'Email'
@@ -745,7 +745,7 @@ WHERE it.issue_type <> 'No Support'
 GROUP BY it.issue_type
 ORDER BY it.issue_type
 """,
-    "OLAP-6 · CUBE (issue × channel × payment)": """
+    "OLAP 6 · Cube: vấn đề × kênh × thanh toán": """
 SELECT
     it.issue_type,
     ch.support_channel,
@@ -766,7 +766,7 @@ ORDER BY grouping_level,
     # =====================================================================
     # Mart demos
     # =====================================================================
-    "MART · billing_monthly — toàn cảnh": """
+    "Mart billing_monthly: bảng đầy đủ": """
 SELECT
     month_start, billing_cycles, active_customers, total_revenue, arpu,
     overdue_rate, no_support_customers, churn_rate
@@ -776,7 +776,7 @@ WHERE 1 = 1
 [[AND month_start <= {{d_end}}::date]]
 ORDER BY month_start
 """,
-    "MART · support_monthly — toàn cảnh": """
+    "Mart support_monthly: bảng đầy đủ": """
 SELECT
     month_start, support_channel, issue_type, tickets,
     avg_resolution_min, csat, escalation_rate, avg_interactions
@@ -788,7 +788,7 @@ WHERE 1 = 1
 [[AND month_start <= {{d_end}}::date]]
 ORDER BY month_start, support_channel, issue_type
 """,
-    "MART · churn_summary — toàn cảnh": """
+    "Mart churn_summary: bảng đầy đủ": """
 SELECT
     churn_flag, payment_status, issue_type, support_channel,
     billing_cycles, customers, churned_customers,
@@ -800,7 +800,7 @@ WHERE 1 = 1
 [[AND support_channel = {{channel}}]]
 ORDER BY billing_cycles DESC
 """,
-    "MART · churn_summary — churn rate đúng cách": """
+    "Mart churn_summary: churn rate tính lại đúng": """
 -- mart_churn_summary.churn_rate luôn 0 hoặc 100 (GROUP BY churn_flag),
 -- nên phải tự tính lại từ billing_cycles.
 SELECT
@@ -820,7 +820,7 @@ ORDER BY churn_rate DESC
     # =====================================================================
     # EDA
     # =====================================================================
-    "EDA · Thống kê mô tả 10 measure": """
+    "EDA: thống kê mô tả 10 chỉ số": """
 SELECT 'call_minutes' AS measure,
        COUNT(*) AS n, ROUND(AVG(call_minutes)::numeric,2) AS mean,
        ROUND(STDDEV(call_minutes)::numeric,2) AS sd,
@@ -894,7 +894,7 @@ UNION ALL SELECT 'satisfaction_score', COUNT(*), ROUND(AVG(satisfaction_score)::
        MAX(satisfaction_score)
 FROM gold.fact_billing_support
 """,
-    "EDA · Histogram total_bill_amount": """
+    "EDA: phân bố hoá đơn": """
 SELECT
     WIDTH_BUCKET(total_bill_amount, 20, 150, 13) AS bucket,
     ROUND(MIN(total_bill_amount)::numeric, 1)    AS bucket_from,
@@ -905,7 +905,7 @@ FROM gold.fact_billing_support
 GROUP BY 1
 ORDER BY 1
 """,
-    "EDA · Histogram data_usage_gb": """
+    "EDA: phân bố dung lượng data": """
 SELECT
     WIDTH_BUCKET(data_usage_gb, 0, 100, 10) AS bucket,
     ROUND(MIN(data_usage_gb)::numeric, 1)   AS bucket_from,
@@ -916,7 +916,7 @@ FROM gold.fact_billing_support
 GROUP BY 1
 ORDER BY 1
 """,
-    "EDA · Outlier check (IQR)": """
+    "EDA: kiểm tra giá trị ngoại lai (IQR)": """
 WITH s AS (
     SELECT
         PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY total_bill_amount) AS q1,
@@ -935,7 +935,7 @@ SELECT
          OR total_bill_amount > q3 + 1.5 * (q3 - q1)) AS outliers
 FROM s
 """,
-    "EDA · Tương quan measure vs churn": """
+    "EDA: chỉ số nào tương quan với churn": """
 -- ORDER BY on an expression is not allowed directly after UNION, so the
 -- union is wrapped in a subquery and sorted outside.
 SELECT measure, corr_with_churn
@@ -973,7 +973,7 @@ FROM (
 ) t
 ORDER BY ABS(corr_with_churn) DESC
 """,
-    "EDA · Missing / sentinel audit": """
+    "EDA: kiểm tra dữ liệu thiếu & sentinel": """
 SELECT 'primary_issue_type IS NULL' AS check_name,
        COUNT(*) AS rows,
        ROUND(100.0 * COUNT(*) / (SELECT COUNT(*) FROM gold.fact_billing_support), 2) AS pct
@@ -996,7 +996,7 @@ SELECT 'last_interaction_date_key = 0', COUNT(*),
 FROM gold.fact_billing_support WHERE last_interaction_date_key = 0
 ORDER BY rows DESC
 """,
-    "EDA · Cardinality các dimension": """
+    "EDA: số lượng thành viên mỗi dimension": """
 SELECT 'dim_customer' AS dimension, COUNT(*) AS members FROM gold.dim_customer
 UNION ALL SELECT 'dim_date', COUNT(*) FROM gold.dim_date
 UNION ALL SELECT 'dim_payment_status', COUNT(*) FROM gold.dim_payment_status
@@ -1004,7 +1004,7 @@ UNION ALL SELECT 'dim_issue_type', COUNT(*) FROM gold.dim_issue_type
 UNION ALL SELECT 'dim_support_channel', COUNT(*) FROM gold.dim_support_channel
 ORDER BY members DESC
 """,
-    "EDA · Phân bố số cycle mỗi khách": """
+    "EDA: mỗi khách có bao nhiêu kỳ": """
 SELECT
     cycles_per_customer,
     COUNT(*) AS customers,
@@ -1021,25 +1021,153 @@ ORDER BY 1
 
 
 # ---------------------------------------------------------------------------
+# One-line descriptions shown under each question title in Metabase.
+# They state what the chart answers and, where it matters, the caveat.
+# ---------------------------------------------------------------------------
+
+DESCRIPTIONS: dict[str, str] = {
+    # --- Overview ---
+    "Tổng quan: quy mô & churn":
+        "112.552 kỳ thanh toán của 27.778 khách. Churn 24,68% là tỷ lệ theo KỲ, "
+        "không phải tỷ lệ khách hàng.",
+    "Tỷ lệ khách còn lại & ARPU theo tháng":
+        "Cột: % số khách còn hoạt động so với tháng đầu. Đường: ARPU. "
+        "ARPU gần như phẳng (~85) chứng tỏ mất khách chứ không mất giá.",
+    "Tỷ lệ churn theo loại vấn đề và kênh":
+        "9 tổ hợp đều 27–29%: không loại vấn đề hay kênh nào nổi trội. "
+        "Ô No Support × None (8,20%) là ngoại lệ duy nhất.",
+    "Churn: khách im lặng vs có liên hệ":
+        "Kỳ không liên hệ support churn 8,20%; kỳ có liên hệ 27,97% — gấp 3,4 lần. "
+        "Ngược với giả định 'khách im lặng mới nguy hiểm'.",
+    "Churn tăng dần theo số lần liên hệ":
+        "8,20% (0 lần) → 33,36% (5 lần). Mỗi lần liên hệ thêm làm tăng rủi ro "
+        "2–3 điểm %, tức là ma sát tích luỹ chứ không phải tín hiệu huỷ đơn thuần.",
+    # --- Revenue & Billing ---
+    "Doanh thu theo tháng":
+        "Tổng hoá đơn theo tháng. Giảm mạnh vì số khách giảm dần (cohort đóng), "
+        "không phải vì giá — luôn đọc kèm ARPU.",
+    "ARPU theo tháng":
+        "Doanh thu bình quân trên mỗi khách hoạt động. Ổn định 83–87 ở các tháng "
+        "đủ mẫu; tháng cuối chỉ 1 khách nên bị nhiễu.",
+    "Tỷ lệ quá hạn thanh toán":
+        "% kỳ có trạng thái Unpaid hoặc Partial. Dao động quanh 20%, khá ổn định.",
+    "Giảm giá & phí phạt (% doanh thu)":
+        "Hai khoản chiết khấu tính theo % doanh thu. Giảm giá ~11,7% doanh thu, "
+        "gấp ~5,8 lần phí phạt — khoản chi lớn chưa chứng minh hiệu quả giữ chân.",
+    "Số khách không liên hệ support":
+        "Số kỳ khách không liên hệ support trong tháng. Đây là nhóm 'im lặng' "
+        "có churn thấp nhưng chưa được tiếp cận.",
+    # --- Support Ops ---
+    "Số ticket theo kênh":
+        "Số kỳ có liên hệ support, chia theo kênh. Lưu ý: đây là số KỲ, "
+        "không phải số lần liên hệ (xem 'Số lần liên hệ TB').",
+    "Thời gian xử lý TB theo kênh":
+        "Thời gian xử lý trung bình, weighted theo số ticket. Ba kênh gần như "
+        "bằng nhau (65,03–65,13 phút) nên tốc độ không phải đòn bẩy giữ chân.",
+    "Tỷ lệ escalate theo kênh":
+        "% ticket bị escalate. Khoảng 10% ở cả ba kênh.",
+    "Phân bố điểm hài lòng (CSAT)":
+        "Chỉ tính kỳ CÓ liên hệ. Phân bố gần như đều 20% mỗi mức 1–5. "
+        "Nếu tính cả kỳ không liên hệ, mức 5 sẽ bị thổi lên gấp đôi.",
+    "Điểm hài lòng theo loại vấn đề và kênh":
+        "CSAT trung bình (weighted theo ticket) cho từng tổ hợp. "
+        "Chênh lệch giữa các ô rất nhỏ.",
+    # --- Churn Risk ---
+    "Xếp hạng tín hiệu rủi ro (lift)":
+        "Lift = churn của nhóm phơi nhiễm ÷ churn nền 24,68%. "
+        "Escalation 1,60× > Unpaid 1,55× > CSAT≤2 1,43× > Liên hệ ≥3 lần 1,23×.",
+    "Churn theo trạng thái thanh toán":
+        "Unpaid 38,14% > Partial 30,34% > Paid 22,31%. Đây là tín hiệu mạnh nhất "
+        "và có sẵn trong billing, không cần survey.",
+    "Churn: có escalate vs không escalate":
+        "39,52% vs 26,69% (lift 1,48×). Escalation chỉ chiếm ~10% ticket nên "
+        "là tín hiệu tầng 2 lý tưởng cho retention.",
+    "Churn theo điểm hài lòng":
+        "Giảm đơn điệu: 37,97% (CSAT 1) → 18,53% (CSAT 5). "
+        "Chỉ tính kỳ có liên hệ.",
+    "Liên hệ kỳ này có báo trước churn kỳ sau?":
+        "24,73% (có liên hệ) vs 24,39% (không) — lift 1,014×, gần như bằng 1. "
+        "Kết luận: liên hệ là TRIỆU CHỨNG cùng kỳ, không phải nguyên nhân.",
+    "Khách churn khác khách ở lại thế nào?":
+        "So sánh 5 chỉ số bình quân. Khách churn: dùng ít dịch vụ hơn, "
+        "phí phạt cao hơn 73,5%, liên hệ support nhiều hơn 28,2%.",
+    # --- OLAP ---
+    "OLAP 1 · Roll-up: năm → quý → tháng":
+        "GROUP BY ROLLUP(year, quarter, month). GROUPING() phân biệt NULL thật "
+        "với NULL sinh ra bởi dòng subtotal.",
+    "OLAP 2 · Drill-down: năm → tháng":
+        "GROUPING SETS ((year), (year, month)) — hai mức zoom trong một kết quả. "
+        "Cột drill_level cho biết dòng nào là tổng năm, dòng nào là chi tiết tháng.",
+    "OLAP 3 · Slice: chỉ kỳ đã thanh toán":
+        "Cố định một chiều (payment_status = 'Paid'), tổng hợp các chiều còn lại "
+        "theo loại vấn đề và kênh.",
+    "OLAP 4 · Dice: 2022 × Paid/Unpaid × Billing":
+        "Lọc đồng thời ba chiều: năm = 2022, trạng thái ∈ {Paid, Unpaid}, "
+        "vấn đề = Billing.",
+    "OLAP 5 · Pivot: churn theo vấn đề × kênh":
+        "Crosstab bằng conditional aggregation: hàng = loại vấn đề, "
+        "cột = kênh. Loại 'No Support' vì không có kênh.",
+    "OLAP 6 · Cube: vấn đề × kênh × thanh toán":
+        "GROUP BY CUBE sinh mọi tổ hợp subtotal (3 chiều, 2 chiều, 1 chiều, tổng). "
+        "Cột grouping_level cho biết chiều nào đã bị gộp.",
+    # --- Mart demos ---
+    "Mart billing_monthly: bảng đầy đủ":
+        "Toàn bộ cột của mart_billing_monthly (grain: 1 dòng/tháng). "
+        "Đây là view nên luôn phản ánh dữ liệu mới nhất.",
+    "Mart support_monthly: bảng đầy đủ":
+        "Toàn bộ cột của mart_support_monthly (grain: 1 dòng/tháng × kênh × vấn đề). "
+        "Đã loại 18.719 kỳ không liên hệ để CSAT không bị sentinel làm lệch.",
+    "Mart churn_summary: bảng đầy đủ":
+        "Toàn bộ cột của mart_churn_summary (grain: churn × thanh toán × vấn đề × kênh). "
+        "Cột churn_rate của mart luôn 0 hoặc 100 — xem card bên dưới.",
+    "Mart churn_summary: churn rate tính lại đúng":
+        "Mart GROUP BY churn_flag nên churn_rate luôn 0/100. Card này tự tính lại "
+        "từ SUM(billing_cycles) FILTER (WHERE churn_flag) để có tỷ lệ dùng được.",
+    # --- EDA ---
+    "EDA: thống kê mô tả 10 chỉ số":
+        "n, mean, sd, min, p25, median, p75, max cho 10 measure. "
+        "Dùng để phát hiện phân bố lệch và thang đo trước khi phân tích.",
+    "EDA: phân bố hoá đơn":
+        "Histogram total_bill_amount chia 13 khoảng đều từ 20 đến 150.",
+    "EDA: phân bố dung lượng data":
+        "Histogram data_usage_gb chia 10 khoảng đều từ 0 đến 100 GB.",
+    "EDA: kiểm tra giá trị ngoại lai (IQR)":
+        "Q1, Q3, IQR và hàng rào 1,5×IQR cho total_bill_amount, "
+        "kèm số dòng nằm ngoài hàng rào.",
+    "EDA: chỉ số nào tương quan với churn":
+        "Hệ số tương quan Pearson giữa từng measure và cờ churn, "
+        "sắp xếp theo trị tuyệt đối. Tương quan ≠ nhân quả.",
+    "EDA: kiểm tra dữ liệu thiếu & sentinel":
+        "Đếm 5 loại giá trị đặc biệt: issue NULL, interaction = 0, CSAT = 5, "
+        "resolution = 0, ngày tương tác = key 0. Đây là nguồn gây hiểu nhầm chính.",
+    "EDA: số lượng thành viên mỗi dimension":
+        "Số dòng của 5 dimension, gồm cả dòng key 0 (Unknown).",
+    "EDA: mỗi khách có bao nhiêu kỳ":
+        "Phân bố số billing cycle trên mỗi khách (1–36). "
+        "Cho thấy cohort co dần chứ không có khách mới.",
+}
+
+
+# ---------------------------------------------------------------------------
 # Which filters each question accepts (drives template-tags generation)
 # ---------------------------------------------------------------------------
 
 CARD_FILTERS: dict[str, list[str]] = {
-    "Cohort retention & ARPU": ["date"],
+    "Tỷ lệ khách còn lại & ARPU theo tháng": ["date"],
     "Doanh thu theo tháng": ["date"],
     "ARPU theo tháng": ["date"],
-    "Tỷ lệ quá hạn": ["date"],
-    "Discount & late fee (% doanh thu)": ["date"],
-    "Khách không liên hệ support": ["date"],
-    "Tickets theo kênh": ["date", "channel", "issue"],
-    "Thời gian xử lý theo kênh": ["date", "channel", "issue"],
-    "Escalation rate theo kênh": ["date", "channel", "issue"],
-    "CSAT theo issue × channel": ["date", "channel", "issue"],
-    "Churn theo payment status": ["payment"],
-    "MART · billing_monthly — toàn cảnh": ["date"],
-    "MART · support_monthly — toàn cảnh": ["date", "channel", "issue"],
-    "MART · churn_summary — toàn cảnh": ["payment", "issue", "channel"],
-    "MART · churn_summary — churn rate đúng cách": ["payment", "issue", "channel"],
+    "Tỷ lệ quá hạn thanh toán": ["date"],
+    "Giảm giá & phí phạt (% doanh thu)": ["date"],
+    "Số khách không liên hệ support": ["date"],
+    "Số ticket theo kênh": ["date", "channel", "issue"],
+    "Thời gian xử lý TB theo kênh": ["date", "channel", "issue"],
+    "Tỷ lệ escalate theo kênh": ["date", "channel", "issue"],
+    "Điểm hài lòng theo loại vấn đề và kênh": ["date", "channel", "issue"],
+    "Churn theo trạng thái thanh toán": ["payment"],
+    "Mart billing_monthly: bảng đầy đủ": ["date"],
+    "Mart support_monthly: bảng đầy đủ": ["date", "channel", "issue"],
+    "Mart churn_summary: bảng đầy đủ": ["payment", "issue", "channel"],
+    "Mart churn_summary: churn rate tính lại đúng": ["payment", "issue", "channel"],
 }
 
 
@@ -1048,12 +1176,12 @@ CARD_FILTERS: dict[str, list[str]] = {
 # ---------------------------------------------------------------------------
 
 VIZ: dict[str, tuple[str, dict]] = {
-    "KPI · Tổng quan": ("table", {}),
-    "Cohort retention & ARPU": (
+    "Tổng quan: quy mô & churn": ("table", {}),
+    "Tỷ lệ khách còn lại & ARPU theo tháng": (
         "line",
         {"graph.dimensions": ["month_start"], "graph.metrics": ["pct_cohort_active", "arpu"]},
     ),
-    "Churn theo issue × channel": (
+    "Tỷ lệ churn theo loại vấn đề và kênh": (
         "pivot",
         {
             "pivot_table.column_split": {
@@ -1063,11 +1191,11 @@ VIZ: dict[str, tuple[str, dict]] = {
             }
         },
     ),
-    "Im lặng vs có liên hệ": (
+    "Churn: khách im lặng vs có liên hệ": (
         "bar",
         {"graph.dimensions": ["segment"], "graph.metrics": ["churn_rate"]},
     ),
-    "Churn theo số lần liên hệ": (
+    "Churn tăng dần theo số lần liên hệ": (
         "bar",
         {"graph.dimensions": ["so_lan_lien_he"], "graph.metrics": ["churn_rate"]},
     ),
@@ -1079,35 +1207,35 @@ VIZ: dict[str, tuple[str, dict]] = {
         "bar",
         {"graph.dimensions": ["month_start"], "graph.metrics": ["arpu"]},
     ),
-    "Tỷ lệ quá hạn": (
+    "Tỷ lệ quá hạn thanh toán": (
         "line",
         {"graph.dimensions": ["month_start"], "graph.metrics": ["overdue_rate"]},
     ),
-    "Discount & late fee (% doanh thu)": (
+    "Giảm giá & phí phạt (% doanh thu)": (
         "line",
         {"graph.dimensions": ["month_start"], "graph.metrics": ["discount_pct", "late_fee_pct"]},
     ),
-    "Khách không liên hệ support": (
+    "Số khách không liên hệ support": (
         "bar",
         {"graph.dimensions": ["month_start"], "graph.metrics": ["no_support_customers"]},
     ),
-    "Tickets theo kênh": (
+    "Số ticket theo kênh": (
         "bar",
         {"graph.dimensions": ["support_channel"], "graph.metrics": ["tickets"]},
     ),
-    "Thời gian xử lý theo kênh": (
+    "Thời gian xử lý TB theo kênh": (
         "bar",
         {"graph.dimensions": ["support_channel"], "graph.metrics": ["avg_resolution_min"]},
     ),
-    "Phân bố CSAT": (
+    "Phân bố điểm hài lòng (CSAT)": (
         "bar",
         {"graph.dimensions": ["satisfaction_score"], "graph.metrics": ["pct"]},
     ),
-    "Escalation rate theo kênh": (
+    "Tỷ lệ escalate theo kênh": (
         "bar",
         {"graph.dimensions": ["support_channel"], "graph.metrics": ["escalation_rate"]},
     ),
-    "CSAT theo issue × channel": (
+    "Điểm hài lòng theo loại vấn đề và kênh": (
         "pivot",
         {
             "pivot_table.column_split": {
@@ -1117,69 +1245,69 @@ VIZ: dict[str, tuple[str, dict]] = {
             }
         },
     ),
-    "Churn theo payment status": (
+    "Churn theo trạng thái thanh toán": (
         "bar",
         {"graph.dimensions": ["payment_status"], "graph.metrics": ["churn_rate"]},
     ),
-    "Churn theo CSAT": (
+    "Churn theo điểm hài lòng": (
         "bar",
         {"graph.dimensions": ["satisfaction_score"], "graph.metrics": ["churn_rate"]},
     ),
-    "Churn theo escalation": (
+    "Churn: có escalate vs không escalate": (
         "bar",
         {"graph.dimensions": ["escalation"], "graph.metrics": ["churn_rate"]},
     ),
-    "Cảnh báo sớm: liên hệ kỳ t → churn kỳ t+1": (
+    "Liên hệ kỳ này có báo trước churn kỳ sau?": (
         "bar",
         {"graph.dimensions": ["ky_truoc"], "graph.metrics": ["churn_ky_sau"]},
     ),
-    "Chân dung khách churn": ("table", {}),
-    "Bảng xếp hạng tín hiệu (lift)": ("table", {}),
+    "Khách churn khác khách ở lại thế nào?": ("table", {}),
+    "Xếp hạng tín hiệu rủi ro (lift)": ("table", {}),
     # OLAP
-    "OLAP-1 · ROLL-UP (year → quarter → month)": ("table", {}),
-    "OLAP-2 · DRILL-DOWN (year → month)": (
+    "OLAP 1 · Roll-up: năm → quý → tháng": ("table", {}),
+    "OLAP 2 · Drill-down: năm → tháng": (
         "bar",
         {"graph.dimensions": ["year", "month"], "graph.metrics": ["revenue"]},
     ),
-    "OLAP-3 · SLICE (payment_status = Paid)": (
+    "OLAP 3 · Slice: chỉ kỳ đã thanh toán": (
         "bar",
         {"graph.dimensions": ["issue_type"], "graph.metrics": ["revenue"]},
     ),
-    "OLAP-4 · DICE (year=2022 × Paid/Unpaid × Billing)": (
+    "OLAP 4 · Dice: 2022 × Paid/Unpaid × Billing": (
         "bar",
         {"graph.dimensions": ["quarter", "payment_status"], "graph.metrics": ["revenue"]},
     ),
-    "OLAP-5 · PIVOT (issue × channel churn)": ("table", {}),
-    "OLAP-6 · CUBE (issue × channel × payment)": ("table", {}),
+    "OLAP 5 · Pivot: churn theo vấn đề × kênh": ("table", {}),
+    "OLAP 6 · Cube: vấn đề × kênh × thanh toán": ("table", {}),
     # Mart demos
-    "MART · billing_monthly — toàn cảnh": ("table", {}),
-    "MART · support_monthly — toàn cảnh": ("table", {}),
-    "MART · churn_summary — toàn cảnh": ("table", {}),
-    "MART · churn_summary — churn rate đúng cách": (
+    "Mart billing_monthly: bảng đầy đủ": ("table", {}),
+    "Mart support_monthly: bảng đầy đủ": ("table", {}),
+    "Mart churn_summary: bảng đầy đủ": ("table", {}),
+    "Mart churn_summary: churn rate tính lại đúng": (
         "bar",
         {"graph.dimensions": ["issue_type"], "graph.metrics": ["churn_rate"]},
     ),
     # EDA
-    "EDA · Thống kê mô tả 10 measure": ("table", {}),
-    "EDA · Histogram total_bill_amount": (
+    "EDA: thống kê mô tả 10 chỉ số": ("table", {}),
+    "EDA: phân bố hoá đơn": (
         "bar",
         {"graph.dimensions": ["bucket"], "graph.metrics": ["cycles"]},
     ),
-    "EDA · Histogram data_usage_gb": (
+    "EDA: phân bố dung lượng data": (
         "bar",
         {"graph.dimensions": ["bucket"], "graph.metrics": ["cycles"]},
     ),
-    "EDA · Outlier check (IQR)": ("table", {}),
-    "EDA · Tương quan measure vs churn": (
+    "EDA: kiểm tra giá trị ngoại lai (IQR)": ("table", {}),
+    "EDA: chỉ số nào tương quan với churn": (
         "bar",
         {"graph.dimensions": ["measure"], "graph.metrics": ["corr_with_churn"]},
     ),
-    "EDA · Missing / sentinel audit": ("table", {}),
-    "EDA · Cardinality các dimension": (
+    "EDA: kiểm tra dữ liệu thiếu & sentinel": ("table", {}),
+    "EDA: số lượng thành viên mỗi dimension": (
         "bar",
         {"graph.dimensions": ["dimension"], "graph.metrics": ["members"]},
     ),
-    "EDA · Phân bố số cycle mỗi khách": (
+    "EDA: mỗi khách có bao nhiêu kỳ": (
         "bar",
         {"graph.dimensions": ["cycles_per_customer"], "graph.metrics": ["customers"]},
     ),
@@ -1201,11 +1329,11 @@ DASHBOARDS: dict[str, dict] = {
         ),
         "filters": ["date"],
         "layout": [
-            ("KPI · Tổng quan", 0, 0, 24, 4),
-            ("Cohort retention & ARPU", 4, 0, 24, 8),
-            ("Churn theo issue × channel", 12, 0, 12, 8),
-            ("Im lặng vs có liên hệ", 12, 12, 12, 8),
-            ("Churn theo số lần liên hệ", 20, 0, 24, 8),
+            ("Tổng quan: quy mô & churn", 0, 0, 24, 4),
+            ("Tỷ lệ khách còn lại & ARPU theo tháng", 4, 0, 24, 8),
+            ("Tỷ lệ churn theo loại vấn đề và kênh", 12, 0, 12, 8),
+            ("Churn: khách im lặng vs có liên hệ", 12, 12, 12, 8),
+            ("Churn tăng dần theo số lần liên hệ", 20, 0, 24, 8),
         ],
     },
     "2 · Revenue & Billing": {
@@ -1218,9 +1346,9 @@ DASHBOARDS: dict[str, dict] = {
         "layout": [
             ("Doanh thu theo tháng", 0, 0, 12, 8),
             ("ARPU theo tháng", 0, 12, 12, 8),
-            ("Tỷ lệ quá hạn", 8, 0, 12, 8),
-            ("Discount & late fee (% doanh thu)", 8, 12, 12, 8),
-            ("Khách không liên hệ support", 16, 0, 24, 8),
+            ("Tỷ lệ quá hạn thanh toán", 8, 0, 12, 8),
+            ("Giảm giá & phí phạt (% doanh thu)", 8, 12, 12, 8),
+            ("Số khách không liên hệ support", 16, 0, 24, 8),
         ],
     },
     "3 · Support Ops": {
@@ -1231,11 +1359,11 @@ DASHBOARDS: dict[str, dict] = {
         ),
         "filters": ["date", "channel", "issue"],
         "layout": [
-            ("Tickets theo kênh", 0, 0, 12, 8),
-            ("Thời gian xử lý theo kênh", 0, 12, 12, 8),
-            ("Escalation rate theo kênh", 8, 0, 12, 8),
-            ("Phân bố CSAT", 8, 12, 12, 8),
-            ("CSAT theo issue × channel", 16, 0, 24, 8),
+            ("Số ticket theo kênh", 0, 0, 12, 8),
+            ("Thời gian xử lý TB theo kênh", 0, 12, 12, 8),
+            ("Tỷ lệ escalate theo kênh", 8, 0, 12, 8),
+            ("Phân bố điểm hài lòng (CSAT)", 8, 12, 12, 8),
+            ("Điểm hài lòng theo loại vấn đề và kênh", 16, 0, 24, 8),
         ],
     },
     "4 · Churn Risk": {
@@ -1245,12 +1373,12 @@ DASHBOARDS: dict[str, dict] = {
         ),
         "filters": ["payment", "issue", "channel"],
         "layout": [
-            ("Bảng xếp hạng tín hiệu (lift)", 0, 0, 24, 8),
-            ("Churn theo payment status", 8, 0, 8, 8),
-            ("Churn theo escalation", 8, 8, 8, 8),
-            ("Churn theo CSAT", 8, 16, 8, 8),
-            ("Cảnh báo sớm: liên hệ kỳ t → churn kỳ t+1", 16, 0, 12, 8),
-            ("Chân dung khách churn", 16, 12, 12, 8),
+            ("Xếp hạng tín hiệu rủi ro (lift)", 0, 0, 24, 8),
+            ("Churn theo trạng thái thanh toán", 8, 0, 8, 8),
+            ("Churn: có escalate vs không escalate", 8, 8, 8, 8),
+            ("Churn theo điểm hài lòng", 8, 16, 8, 8),
+            ("Liên hệ kỳ này có báo trước churn kỳ sau?", 16, 0, 12, 8),
+            ("Khách churn khác khách ở lại thế nào?", 16, 12, 12, 8),
         ],
     },
     "5 · OLAP Lab — 6 kỹ thuật": {
@@ -1261,12 +1389,12 @@ DASHBOARDS: dict[str, dict] = {
         ),
         "filters": [],
         "layout": [
-            ("OLAP-1 · ROLL-UP (year → quarter → month)", 0, 0, 24, 10),
-            ("OLAP-2 · DRILL-DOWN (year → month)", 10, 0, 12, 8),
-            ("OLAP-3 · SLICE (payment_status = Paid)", 10, 12, 12, 8),
-            ("OLAP-4 · DICE (year=2022 × Paid/Unpaid × Billing)", 18, 0, 12, 8),
-            ("OLAP-5 · PIVOT (issue × channel churn)", 18, 12, 12, 8),
-            ("OLAP-6 · CUBE (issue × channel × payment)", 26, 0, 24, 10),
+            ("OLAP 1 · Roll-up: năm → quý → tháng", 0, 0, 24, 10),
+            ("OLAP 2 · Drill-down: năm → tháng", 10, 0, 12, 8),
+            ("OLAP 3 · Slice: chỉ kỳ đã thanh toán", 10, 12, 12, 8),
+            ("OLAP 4 · Dice: 2022 × Paid/Unpaid × Billing", 18, 0, 12, 8),
+            ("OLAP 5 · Pivot: churn theo vấn đề × kênh", 18, 12, 12, 8),
+            ("OLAP 6 · Cube: vấn đề × kênh × thanh toán", 26, 0, 24, 10),
         ],
     },
     "6 · Mart Demo — billing_monthly": {
@@ -1276,11 +1404,11 @@ DASHBOARDS: dict[str, dict] = {
         ),
         "filters": ["date"],
         "layout": [
-            ("MART · billing_monthly — toàn cảnh", 0, 0, 24, 10),
+            ("Mart billing_monthly: bảng đầy đủ", 0, 0, 24, 10),
             ("Doanh thu theo tháng", 10, 0, 12, 8),
             ("ARPU theo tháng", 10, 12, 12, 8),
-            ("Tỷ lệ quá hạn", 18, 0, 12, 8),
-            ("Khách không liên hệ support", 18, 12, 12, 8),
+            ("Tỷ lệ quá hạn thanh toán", 18, 0, 12, 8),
+            ("Số khách không liên hệ support", 18, 12, 12, 8),
         ],
     },
     "7 · Mart Demo — support_monthly": {
@@ -1291,11 +1419,11 @@ DASHBOARDS: dict[str, dict] = {
         ),
         "filters": ["date", "channel", "issue"],
         "layout": [
-            ("MART · support_monthly — toàn cảnh", 0, 0, 24, 10),
-            ("Tickets theo kênh", 10, 0, 12, 8),
-            ("Thời gian xử lý theo kênh", 10, 12, 12, 8),
-            ("Escalation rate theo kênh", 18, 0, 12, 8),
-            ("CSAT theo issue × channel", 18, 12, 12, 8),
+            ("Mart support_monthly: bảng đầy đủ", 0, 0, 24, 10),
+            ("Số ticket theo kênh", 10, 0, 12, 8),
+            ("Thời gian xử lý TB theo kênh", 10, 12, 12, 8),
+            ("Tỷ lệ escalate theo kênh", 18, 0, 12, 8),
+            ("Điểm hài lòng theo loại vấn đề và kênh", 18, 12, 12, 8),
         ],
     },
     "8 · Mart Demo — churn_summary": {
@@ -1306,10 +1434,10 @@ DASHBOARDS: dict[str, dict] = {
         ),
         "filters": ["payment", "issue", "channel"],
         "layout": [
-            ("MART · churn_summary — toàn cảnh", 0, 0, 24, 10),
-            ("MART · churn_summary — churn rate đúng cách", 10, 0, 24, 8),
-            ("Churn theo payment status", 18, 0, 12, 8),
-            ("Chân dung khách churn", 18, 12, 12, 8),
+            ("Mart churn_summary: bảng đầy đủ", 0, 0, 24, 10),
+            ("Mart churn_summary: churn rate tính lại đúng", 10, 0, 24, 8),
+            ("Churn theo trạng thái thanh toán", 18, 0, 12, 8),
+            ("Khách churn khác khách ở lại thế nào?", 18, 12, 12, 8),
         ],
     },
     "9 · EDA — Khám phá dữ liệu": {
@@ -1320,14 +1448,14 @@ DASHBOARDS: dict[str, dict] = {
         ),
         "filters": [],
         "layout": [
-            ("EDA · Thống kê mô tả 10 measure", 0, 0, 24, 10),
-            ("EDA · Histogram total_bill_amount", 10, 0, 12, 8),
-            ("EDA · Histogram data_usage_gb", 10, 12, 12, 8),
-            ("EDA · Tương quan measure vs churn", 18, 0, 12, 8),
-            ("EDA · Outlier check (IQR)", 18, 12, 12, 8),
-            ("EDA · Missing / sentinel audit", 26, 0, 12, 8),
-            ("EDA · Cardinality các dimension", 26, 12, 12, 8),
-            ("EDA · Phân bố số cycle mỗi khách", 34, 0, 24, 8),
+            ("EDA: thống kê mô tả 10 chỉ số", 0, 0, 24, 10),
+            ("EDA: phân bố hoá đơn", 10, 0, 12, 8),
+            ("EDA: phân bố dung lượng data", 10, 12, 12, 8),
+            ("EDA: chỉ số nào tương quan với churn", 18, 0, 12, 8),
+            ("EDA: kiểm tra giá trị ngoại lai (IQR)", 18, 12, 12, 8),
+            ("EDA: kiểm tra dữ liệu thiếu & sentinel", 26, 0, 12, 8),
+            ("EDA: số lượng thành viên mỗi dimension", 26, 12, 12, 8),
+            ("EDA: mỗi khách có bao nhiêu kỳ", 34, 0, 24, 8),
         ],
     },
 }
@@ -1384,6 +1512,7 @@ def main() -> int:
             display=display,
             database_id=database_id,
             collection_id=collection_id,
+            description=DESCRIPTIONS.get(name, ""),
             viz=viz,
             template_tags=tags,
         )
