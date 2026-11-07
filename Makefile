@@ -30,13 +30,15 @@ PSQL := docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U $(DB_USER) -d
 
 .PHONY: help install up down reset reset-soft wait-db init-db \
         download profile bronze silver-gold marts refresh-mv \
-        olap-demo validate export all clean
+        olap-demo validate export metabase-dashboards all clean
 
 # ---------------------------------------------------------------------------
 help:  ## Show this help
 	@echo "Medallion DW — available targets:"
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
-	  | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
+	@# $(firstword ...) is required: `-include .env` puts .env into
+	@# MAKEFILE_LIST, and grep would then prefix every line with a filename.
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(firstword $(MAKEFILE_LIST)) \
+	  | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}'
 
 # ---------------------------------------------------------------------------
 # Environment
@@ -131,8 +133,18 @@ validate:  ## Run data-quality rules, write gold.dq_results
 export:  ## Export marts, dimensions and denormalized fact to CSV + Parquet
 	$(PY) src/05_export_marts.py
 
+# ---------------------------------------------------------------------------
+# Metabase dashboards (generated via API, not clicked by hand)
+# ---------------------------------------------------------------------------
+metabase-dashboards:  ## Create/update 21 questions + 4 dashboards via Metabase API
+	@test -n "$(MB_USER)" || (echo "ERROR: set MB_USER and MB_PASS (Metabase admin login)" && exit 1)
+	$(PY) scripts/build_metabase_dashboards.py \
+	  --url http://localhost:$(METABASE_PORT) \
+	  --user "$(MB_USER)" --password "$(MB_PASS)"
+
 all: up download profile bronze silver-gold marts refresh-mv validate export  ## Full pipeline
 	@echo "Pipeline finished. Run 'make olap-demo' to see the OLAP queries."
+	@echo "Then 'make metabase-dashboards' to build the 4 dashboards."
 
 clean:  ## Remove Python caches and generated exports (keeps data/raw CSV)
 	rm -rf __pycache__ src/__pycache__ scripts/__pycache__ .pytest_cache
