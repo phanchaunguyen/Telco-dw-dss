@@ -143,7 +143,6 @@ class Metabase:
     ) -> int:
         payload = {
             "name": name,
-            "description": description,
             "display": display,
             "dataset_query": {
                 "database": database_id,
@@ -153,6 +152,10 @@ class Metabase:
             "visualization_settings": viz or {},
             "collection_id": collection_id,
         }
+        # Metabase rejects `description: ""` ("nullable value must be a
+        # non-blank string"), so only send the key when it has content.
+        if description:
+            payload["description"] = description
         existing = self.find_card(name)
         if existing:
             card_id = int(existing["id"])
