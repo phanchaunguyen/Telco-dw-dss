@@ -42,6 +42,7 @@ import os
 import sys
 import urllib.error
 import urllib.request
+from pathlib import Path
 from typing import Any
 
 # ---------------------------------------------------------------------------
@@ -635,6 +636,16 @@ DASHBOARDS: dict[str, tuple[str, list[tuple[str, int, int, int, int]]]] = {
 
 
 def main() -> int:
+    # Load .env from the repo root so the script also works when invoked
+    # directly (`python scripts/build_metabase_dashboards.py`) instead of
+    # through `make`, which already exports the file.
+    try:
+        from dotenv import load_dotenv
+
+        load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+    except ImportError:  # python-dotenv missing -> rely on real env vars
+        pass
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--url", default=os.getenv("MB_URL", "http://localhost:3000"))
     parser.add_argument("--user", default=os.getenv("MB_USER"))
@@ -646,9 +657,16 @@ def main() -> int:
     if not args.user or not args.password:
         print(
             "ERROR: Metabase credentials required.\n"
-            "  export MB_USER=you@example.com\n"
-            "  export MB_PASS=yourpassword\n"
-            "or pass --user / --password",
+            "\n"
+            "Add them to the `.env` file in the repo root (gitignored):\n"
+            "    MB_USER=you@example.com\n"
+            "    MB_PASS=yourpassword\n"
+            "\n"
+            "Then re-run:  make metabase-dashboards\n"
+            "\n"
+            "Or pass them explicitly:\n"
+            "    python scripts/build_metabase_dashboards.py \\\n"
+            "        --user you@example.com --password yourpassword",
             file=sys.stderr,
         )
         return 2

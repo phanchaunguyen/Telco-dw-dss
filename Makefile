@@ -137,10 +137,13 @@ export:  ## Export marts, dimensions and denormalized fact to CSV + Parquet
 # Metabase dashboards (generated via API, not clicked by hand)
 # ---------------------------------------------------------------------------
 metabase-dashboards:  ## Create/update 21 questions + 4 dashboards via Metabase API
-	@test -n "$(MB_USER)" || (echo "ERROR: set MB_USER and MB_PASS (Metabase admin login)" && exit 1)
+	@test -n "$(MB_USER)" || (echo "ERROR: MB_USER is empty. Add it to .env:" && echo "  MB_USER=you@example.com" && echo "  MB_PASS=yourpassword" && exit 1)
+	@test -n "$(MB_PASS)" || (echo "ERROR: MB_PASS is empty. Add it to .env:" && echo "  MB_USER=you@example.com" && echo "  MB_PASS=yourpassword" && exit 1)
 	$(PY) scripts/build_metabase_dashboards.py \
-	  --url http://localhost:$(METABASE_PORT) \
-	  --user "$(MB_USER)" --password "$(MB_PASS)"
+	  --url "$(if $(MB_URL),$(MB_URL),http://localhost:$(METABASE_PORT))" \
+	  --user "$(MB_USER)" --password "$(MB_PASS)" \
+	  --database "$(if $(MB_DATABASE),$(MB_DATABASE),warehouse)" \
+	  --collection "$(if $(MB_COLLECTION),$(MB_COLLECTION),Telco Churn DSS)"
 
 all: up download profile bronze silver-gold marts refresh-mv validate export  ## Full pipeline
 	@echo "Pipeline finished. Run 'make olap-demo' to see the OLAP queries."
