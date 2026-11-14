@@ -94,22 +94,26 @@ COMMENT ON VIEW gold.mart_support_monthly IS
 -- ---------------------------------------------------------------------------
 -- mart_churn_summary
 --
---  Grain: 1 row per (churn_flag, payment_status, issue_type, channel).
+--  Grain: 1 row per (payment_status, issue_type, channel).
 --  Uses ALL fact rows, including the 'No Support' / 'None' members, so the
 --  silent-churn segment stays visible (D7).
 --
---  churn_rate is a ROW-level rate (share of billing cycles flagged churned),
---  which is what the spec asks for. churned_customers is added so the
---  customer-level view can be cross-checked: one customer can churn in one
---  cycle and not in another, so the two numbers legitimately differ.
+--  churn_flag is a MEASURE here, not part of the grain. An earlier version
+--  grouped by churn_flag as well, which split every segment into a churned
+--  row and a retained row and made churn_rate always 0 or 100. Counting the
+--  churned cycles inside the group gives a rate that can actually be read.
+--
+--  churn_rate is a ROW-level rate (share of billing cycles flagged churned).
+--  churned_customers is added so the customer-level view can be cross-checked.
 -- ---------------------------------------------------------------------------
-CREATE OR REPLACE VIEW gold.mart_churn_summary AS
+DROP VIEW IF EXISTS gold.mart_churn_summary;
+CREATE VIEW gold.mart_churn_summary AS
 SELECT
-    f.churn_flag,
     ps.payment_status,
     it.issue_type,
     ch.support_channel,
     COUNT(*)                                                AS billing_cycles,
+    COUNT(*) FILTER (WHERE f.churn_flag)                    AS churned_cycles,
     COUNT(DISTINCT f.customer_key)                          AS customers,
     COUNT(DISTINCT f.customer_key) FILTER (WHERE f.churn_flag)
                                                             AS churned_customers,
@@ -123,7 +127,7 @@ FROM gold.fact_billing_support f
 JOIN gold.dim_payment_status  ps ON ps.payment_status_key  = f.payment_status_key
 JOIN gold.dim_issue_type      it ON it.issue_type_key      = f.issue_type_key
 JOIN gold.dim_support_channel ch ON ch.support_channel_key = f.channel_key
-GROUP BY f.churn_flag, ps.payment_status, it.issue_type, ch.support_channel;
+GROUP BY ps.payment_status, it.issue_type, ch.support_channel;
 
 COMMENT ON VIEW gold.mart_churn_summary IS
-  'Churn by segment. Grain: 1 row per churn_flag+payment_status+issue_type+channel. Uses all fact rows.';
+  'Churn by segment. Grain: 1 row per payment_status+issue_type+channel. Uses all fact rows.';

@@ -30,7 +30,7 @@ PSQL := docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U $(DB_USER) -d
 
 .PHONY: help install up down reset reset-soft wait-db init-db \
         download profile bronze silver-gold marts refresh-mv \
-        olap-demo validate export metabase-dashboards all clean
+        olap-demo validate export dss figures metabase-dashboards all clean
 
 # ---------------------------------------------------------------------------
 help:  ## Show this help
@@ -127,6 +127,14 @@ refresh-mv:  ## Refresh materialized views CONCURRENTLY
 olap-demo:  ## Run the 5 OLAP demonstrations (+ CUBE bonus)
 	$(PSQL) < sql/05_olap_demos.sql
 
+dss:  ## DSS: feature view, churn hazard model, retention planner functions
+	$(PSQL) < sql/06_dss_features.sql
+	$(PY) src/06_dss_model.py
+	$(PSQL) < sql/07_dss_decision.sql
+
+figures:  ## Render report charts from gold into docs/figures/
+	$(PY) scripts/make_report_figures.py
+
 validate:  ## Run data-quality rules, write gold.dq_results
 	$(PY) src/04_validate.py
 
@@ -145,7 +153,7 @@ metabase-dashboards:  ## Create/update 21 questions + 4 dashboards via Metabase 
 	  --database "$(if $(MB_DATABASE),$(MB_DATABASE),warehouse)" \
 	  --collection "$(if $(MB_COLLECTION),$(MB_COLLECTION),Telco Churn DSS)"
 
-all: up download profile bronze silver-gold marts refresh-mv validate export  ## Full pipeline
+all: up download profile bronze silver-gold marts refresh-mv dss validate export  ## Full pipeline
 	@echo "Pipeline finished. Run 'make olap-demo' to see the OLAP queries."
 	@echo "Then 'make metabase-dashboards' to build the 4 dashboards."
 
