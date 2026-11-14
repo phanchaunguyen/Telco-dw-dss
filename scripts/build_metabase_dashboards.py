@@ -274,7 +274,28 @@ FILTERS: dict[str, tuple[str, str, str, str]] = {
     "payment": ("f_payment", "Trạng thái thanh toán", "string/=", "payment"),
     "issue": ("f_issue", "Loại vấn đề", "string/=", "issue"),
     "channel": ("f_channel", "Kênh support", "string/=", "channel"),
+    # DSS what-if inputs: plain values, not row filters. They feed the
+    # arguments of gold.fn_retention_plan(), so each one needs a default.
+    "dss_month": ("f_dss_month", "Tháng lập kế hoạch", "date/single", "dss_month"),
+    "budget": ("f_budget", "Ngân sách", "number/=", "budget"),
+    "offer_cost": ("f_offer_cost", "Chi phí 1 ưu đãi", "number/=", "offer_cost"),
+    "save_rate": ("f_save_rate", "Tỷ lệ giữ chân thành công", "number/=", "save_rate"),
 }
+
+FILTER_DEFAULTS: dict[str, Any] = {
+    "dss_month": "2020-04-01",
+    "budget": 20000,
+    "offer_cost": 10,
+    "save_rate": 0.3,
+}
+
+
+def _tag_type(ptype: str) -> str:
+    if ptype.startswith("number"):
+        return "number"
+    if ptype.startswith("date"):
+        return "date"
+    return "text"
 
 # A single dashboard parameter cannot feed two template tags with different
 # values (Metabase sends the same value to both), so the date range is exposed
@@ -304,15 +325,16 @@ def build_parameters(wanted: list[str]) -> tuple[list[dict], dict[str, str]]:
             ids["date"] = "f_start"  # marker; mappings handled separately
             continue
         pid, name, ptype, _tag = FILTERS[key]
-        params.append(
-            {
-                "id": pid,
-                "name": name,
-                "slug": pid.replace("f_", ""),
-                "type": ptype,
-                "sectionId": "category",
-            }
-        )
+        param = {
+            "id": pid,
+            "name": name,
+            "slug": pid.replace("f_", ""),
+            "type": ptype,
+            "sectionId": {"number": "number", "date": "date"}.get(_tag_type(ptype), "category"),
+        }
+        if key in FILTER_DEFAULTS:
+            param["default"] = FILTER_DEFAULTS[key]
+        params.append(param)
         ids[key] = pid
     return params, ids
 
@@ -340,8 +362,11 @@ def template_tags_for(filter_keys: list[str]) -> dict:
                 "id": f"tag_{tag}",
                 "name": tag,
                 "display-name": FILTERS[key][1],
-                "type": "text",
+                "type": _tag_type(FILTERS[key][2]),
             }
+            if key in FILTER_DEFAULTS:
+                tags[tag]["default"] = FILTER_DEFAULTS[key]
+                tags[tag]["required"] = True
     return tags
 
 
@@ -663,7 +688,7 @@ ORDER BY lift DESC
     # =====================================================================
     "OLAP 1 · Roll-up: năm → quý → tháng": """
 SELECT
-    d.year, d.quarter, d.month,
+    d.year::text AS year, d.quarter, d.month,
     GROUPING(d.year, d.quarter, d.month) AS grouping_level,
     CASE GROUPING(d.year, d.quarter, d.month)
         WHEN 0 THEN 'month'
@@ -685,7 +710,7 @@ SELECT
         WHEN 0 THEN '2. month detail'
         WHEN 1 THEN '1. year total'
     END                                  AS drill_level,
-    d.year, d.month,
+    d.year::text AS year, d.month,
     COUNT(*)                             AS billing_cycles,
     SUM(f.total_bill_amount)             AS revenue,
     ROUND(100.0 * COUNT(*) FILTER (WHERE f.churn_flag) / COUNT(*), 2) AS churn_rate
@@ -790,9 +815,9 @@ ORDER BY month_start, support_channel, issue_type
 """,
     "Mart churn_summary: bảng đầy đủ": """
 SELECT
-    churn_flag, payment_status, issue_type, support_channel,
-    billing_cycles, customers, churned_customers,
-    avg_bill, avg_csat, avg_interactions, avg_resolution
+    payment_status, issue_type, support_channel,
+    billing_cycles, churned_cycles, customers, churned_customers,
+    avg_bill, avg_csat, avg_interactions, avg_resolution, churn_rate
 FROM gold.mart_churn_summary
 WHERE 1 = 1
 [[AND payment_status = {{payment}}]]
@@ -801,21 +826,71 @@ WHERE 1 = 1
 ORDER BY billing_cycles DESC
 """,
     "Mart churn_summary: churn rate tính lại đúng": """
--- mart_churn_summary.churn_rate luôn 0 hoặc 100 (GROUP BY churn_flag),
--- nên phải tự tính lại từ billing_cycles.
+-- churn_flag là measure của mart (không nằm trong grain), nên churn_rate
+-- đọc thẳng được; card này chỉ sắp xếp lại theo mức rủi ro.
 SELECT
     payment_status, issue_type, support_channel,
-    SUM(billing_cycles)                                        AS cycles,
-    SUM(billing_cycles) FILTER (WHERE churn_flag)              AS churned,
-    ROUND(100.0 * SUM(billing_cycles) FILTER (WHERE churn_flag)
-          / SUM(billing_cycles), 2)                            AS churn_rate
+    billing_cycles AS cycles, churned_cycles AS churned, churn_rate
 FROM gold.mart_churn_summary
 WHERE 1 = 1
 [[AND payment_status = {{payment}}]]
 [[AND issue_type = {{issue}}]]
 [[AND support_channel = {{channel}}]]
-GROUP BY payment_status, issue_type, support_channel
 ORDER BY churn_rate DESC
+""",
+    # =====================================================================
+    # DSS — retention planner (sql/06-07, src/06_dss_model.py)
+    # =====================================================================
+    "DSS: tóm tắt kế hoạch giữ chân": """
+SELECT *
+FROM gold.fn_retention_plan_summary(
+    {{dss_month}}::date, {{budget}}, {{offer_cost}}, {{save_rate}}
+)
+""",
+    "DSS: danh sách khách ưu tiên": """
+SELECT priority, customer_id, risk_band, p_churn, bill,
+       value_if_retained, expected_gain, cumulative_cost
+FROM gold.fn_retention_plan(
+    {{dss_month}}::date, {{budget}}, {{offer_cost}}, {{save_rate}}
+)
+WHERE selected
+ORDER BY priority
+LIMIT 500
+""",
+    "DSS: khách theo nhóm rủi ro mỗi tháng": """
+SELECT month_start, risk_band, customers
+FROM gold.dss_risk_band_monthly
+WHERE month_start >= DATE '2020-04-01'
+  AND month_start <  DATE '2021-01-01'
+ORDER BY month_start, risk_band
+""",
+    "DSS: dự báo so với thực tế theo nhóm rủi ro": """
+SELECT risk_band,
+       COUNT(*)                                                     AS cycles,
+       ROUND(100 * AVG(p_churn)::numeric, 2)                        AS predicted_pct,
+       ROUND(100.0 * AVG(CASE WHEN churn_flag THEN 1.0 ELSE 0.0 END), 2) AS actual_pct
+FROM gold.dss_churn_score
+WHERE split = 'test'
+GROUP BY risk_band
+ORDER BY predicted_pct DESC
+""",
+    "DSS: so sánh mô hình trên giai đoạn kiểm tra": """
+SELECT model, auc, lift_top10, recall_top10, lift_top20, recall_top20
+FROM gold.dss_model_eval
+ORDER BY auc DESC
+""",
+    "DSS: yếu tố ảnh hưởng (hệ số chuẩn hoá)": """
+SELECT feature, coef_std, odds_ratio_per_sd
+FROM gold.dss_model_coef
+ORDER BY ABS(coef_std) DESC
+LIMIT 15
+""",
+    "DSS: tỷ lệ bắt được khách churn theo ngân sách": """
+SELECT ROUND(100 * budget_share::numeric)::int AS pct_khach_duoc_tiep_can,
+       strategy,
+       ROUND(100 * recall::numeric, 1) AS pct_churn_bat_duoc
+FROM gold.dss_policy_backtest
+ORDER BY budget_share, strategy
 """,
     # =====================================================================
     # EDA
@@ -1026,6 +1101,18 @@ ORDER BY 1
 # ---------------------------------------------------------------------------
 
 DESCRIPTIONS: dict[str, str] = {
+    "DSS: tóm tắt kế hoạch giữ chân":
+        "Chi phí, số khách được chọn, giá trị kỳ vọng và ROI của kế hoạch. "
+        "Hai cột cuối là backtest: trong số khách được chọn, bao nhiêu thật sự churn.",
+    "DSS: danh sách khách ưu tiên":
+        "Khách được chọn theo expected_gain giảm dần cho tới khi hết ngân sách. "
+        "Đổi ngân sách, chi phí ưu đãi hoặc tỷ lệ giữ chân để xem danh sách thay đổi.",
+    "DSS: dự báo so với thực tế theo nhóm rủi ro":
+        "Kiểm tra hiệu chuẩn: xác suất mô hình dự báo so với tỷ lệ churn thật, "
+        "chỉ trên giai đoạn kiểm tra (từ 04/2020).",
+    "DSS: tỷ lệ bắt được khách churn theo ngân sách":
+        "Backtest: nếu mỗi tháng tiếp cận k% khách, mỗi chiến lược bắt được bao nhiêu % "
+        "khách churn. random là kỳ vọng khi chọn ngẫu nhiên.",
     # --- Overview ---
     "Tổng quan: quy mô & churn":
         "112.552 kỳ thanh toán của 27.778 khách. Churn 24,68% là tỷ lệ theo KỲ, "
@@ -1118,11 +1205,11 @@ DESCRIPTIONS: dict[str, str] = {
         "Toàn bộ cột của mart_support_monthly (grain: 1 dòng/tháng × kênh × vấn đề). "
         "Đã loại 18.719 kỳ không liên hệ để CSAT không bị sentinel làm lệch.",
     "Mart churn_summary: bảng đầy đủ":
-        "Toàn bộ cột của mart_churn_summary (grain: churn × thanh toán × vấn đề × kênh). "
-        "Cột churn_rate của mart luôn 0 hoặc 100 — xem card bên dưới.",
+        "Toàn bộ cột của mart_churn_summary (grain: thanh toán × vấn đề × kênh). "
+        "churn_flag là measure nên churn_rate đọc trực tiếp được.",
     "Mart churn_summary: churn rate tính lại đúng":
-        "Mart GROUP BY churn_flag nên churn_rate luôn 0/100. Card này tự tính lại "
-        "từ SUM(billing_cycles) FILTER (WHERE churn_flag) để có tỷ lệ dùng được.",
+        "Các segment xếp theo churn_rate giảm dần, lọc được theo thanh toán, "
+        "vấn đề và kênh.",
     # --- EDA ---
     "EDA: thống kê mô tả 10 chỉ số":
         "n, mean, sd, min, p25, median, p75, max cho 10 measure. "
@@ -1153,6 +1240,8 @@ DESCRIPTIONS: dict[str, str] = {
 # ---------------------------------------------------------------------------
 
 CARD_FILTERS: dict[str, list[str]] = {
+    "DSS: tóm tắt kế hoạch giữ chân": ["dss_month", "budget", "offer_cost", "save_rate"],
+    "DSS: danh sách khách ưu tiên": ["dss_month", "budget", "offer_cost", "save_rate"],
     "Tỷ lệ khách còn lại & ARPU theo tháng": ["date"],
     "Doanh thu theo tháng": ["date"],
     "ARPU theo tháng": ["date"],
@@ -1176,20 +1265,38 @@ CARD_FILTERS: dict[str, list[str]] = {
 # ---------------------------------------------------------------------------
 
 VIZ: dict[str, tuple[str, dict]] = {
+    "DSS: khách theo nhóm rủi ro mỗi tháng": (
+        "bar",
+        {
+            "graph.dimensions": ["month_start", "risk_band"],
+            "graph.metrics": ["customers"],
+            "stackable.stack_type": "stacked",
+        },
+    ),
+    "DSS: dự báo so với thực tế theo nhóm rủi ro": (
+        "bar",
+        {"graph.dimensions": ["risk_band"], "graph.metrics": ["predicted_pct", "actual_pct"]},
+    ),
+    "DSS: yếu tố ảnh hưởng (hệ số chuẩn hoá)": (
+        "row",
+        {"graph.dimensions": ["feature"], "graph.metrics": ["coef_std"]},
+    ),
+    "DSS: tỷ lệ bắt được khách churn theo ngân sách": (
+        "line",
+        {
+            "graph.dimensions": ["pct_khach_duoc_tiep_can", "strategy"],
+            "graph.metrics": ["pct_churn_bat_duoc"],
+        },
+    ),
     "Tổng quan: quy mô & churn": ("table", {}),
     "Tỷ lệ khách còn lại & ARPU theo tháng": (
         "line",
         {"graph.dimensions": ["month_start"], "graph.metrics": ["pct_cohort_active", "arpu"]},
     ),
+    # Metabase only pivots query-builder questions, so native SQL uses grouped bars.
     "Tỷ lệ churn theo loại vấn đề và kênh": (
-        "pivot",
-        {
-            "pivot_table.column_split": {
-                "rows": ["issue_type"],
-                "columns": ["support_channel"],
-                "values": ["churn_rate"],
-            }
-        },
+        "bar",
+        {"graph.dimensions": ["issue_type", "support_channel"], "graph.metrics": ["churn_rate"]},
     ),
     "Churn: khách im lặng vs có liên hệ": (
         "bar",
@@ -1236,14 +1343,8 @@ VIZ: dict[str, tuple[str, dict]] = {
         {"graph.dimensions": ["support_channel"], "graph.metrics": ["escalation_rate"]},
     ),
     "Điểm hài lòng theo loại vấn đề và kênh": (
-        "pivot",
-        {
-            "pivot_table.column_split": {
-                "rows": ["issue_type"],
-                "columns": ["support_channel"],
-                "values": ["csat"],
-            }
-        },
+        "bar",
+        {"graph.dimensions": ["issue_type", "support_channel"], "graph.metrics": ["csat"]},
     ),
     "Churn theo trạng thái thanh toán": (
         "bar",
@@ -1265,10 +1366,7 @@ VIZ: dict[str, tuple[str, dict]] = {
     "Xếp hạng tín hiệu rủi ro (lift)": ("table", {}),
     # OLAP
     "OLAP 1 · Roll-up: năm → quý → tháng": ("table", {}),
-    "OLAP 2 · Drill-down: năm → tháng": (
-        "bar",
-        {"graph.dimensions": ["year", "month"], "graph.metrics": ["revenue"]},
-    ),
+    "OLAP 2 · Drill-down: năm → tháng": ("table", {}),
     "OLAP 3 · Slice: chỉ kỳ đã thanh toán": (
         "bar",
         {"graph.dimensions": ["issue_type"], "graph.metrics": ["revenue"]},
@@ -1428,9 +1526,8 @@ DASHBOARDS: dict[str, dict] = {
     },
     "8 · Mart Demo — churn_summary": {
         "description": (
-            "Demo mart_churn_summary: grain 1 dòng/(churn × payment × issue × "
-            "channel). LƯU Ý: cột churn_rate của mart luôn 0 hoặc 100 vì "
-            "GROUP BY churn_flag — card cuối tự tính lại đúng cách."
+            "Demo mart_churn_summary: grain 1 dòng/(payment × issue × channel), "
+            "churn_flag là measure nên churn_rate đọc thẳng được."
         ),
         "filters": ["payment", "issue", "channel"],
         "layout": [
@@ -1438,6 +1535,23 @@ DASHBOARDS: dict[str, dict] = {
             ("Mart churn_summary: churn rate tính lại đúng", 10, 0, 24, 8),
             ("Churn theo trạng thái thanh toán", 18, 0, 12, 8),
             ("Khách churn khác khách ở lại thế nào?", 18, 12, 12, 8),
+        ],
+    },
+    "10 · DSS — Retention Planner": {
+        "description": (
+            "Thành phần hỗ trợ quyết định: mô hình hazard chấm điểm rủi ro từng "
+            "khách, hàm gold.fn_retention_plan chọn ai nhận ưu đãi trong giới hạn "
+            "ngân sách. Đổi 4 tham số phía trên để chạy what-if."
+        ),
+        "filters": ["dss_month", "budget", "offer_cost", "save_rate"],
+        "layout": [
+            ("DSS: tóm tắt kế hoạch giữ chân", 0, 0, 24, 4),
+            ("DSS: danh sách khách ưu tiên", 4, 0, 14, 10),
+            ("DSS: so sánh mô hình trên giai đoạn kiểm tra", 4, 14, 10, 5),
+            ("DSS: dự báo so với thực tế theo nhóm rủi ro", 9, 14, 10, 5),
+            ("DSS: tỷ lệ bắt được khách churn theo ngân sách", 14, 0, 12, 8),
+            ("DSS: yếu tố ảnh hưởng (hệ số chuẩn hoá)", 14, 12, 12, 8),
+            ("DSS: khách theo nhóm rủi ro mỗi tháng", 22, 0, 24, 8),
         ],
     },
     "9 · EDA — Khám phá dữ liệu": {

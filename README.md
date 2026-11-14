@@ -19,6 +19,7 @@ Kiến trúc **Medallion** (Bronze → Silver → Gold) kết hợp **ETL/ELT la
 9. [Dataset](#9-dataset)
 10. [Định nghĩa KPI](#10-định-nghĩa-kpi)
 11. [DSS use cases](#11-dss-use-cases)
+    - [11.6 DSS module: churn hazard model + retention planner](#116-dss-module-churn-hazard-model--retention-planner)
 12. [Cấu trúc thư mục](#12-cấu-trúc-thư-mục)
 13. [Metabase setup](#13-metabase-setup)
 14. [Troubleshooting](#14-troubleshooting)
@@ -480,6 +481,46 @@ Pipeline này phục vụ 5 quyết định cụ thể:
 
 **Quyết định:** Chat nhanh hơn nhưng không giữ chân tốt hơn. Đầu tư vào Chat chỉ hợp lý nếu mục tiêu là **giảm chi phí vận hành**, không phải giảm churn.
 
+### 11.6. DSS module: churn hazard model + retention planner
+
+Năm use case trên là phần *data-driven* (đọc dashboard, tự kết luận). Module DSS thêm phần *model-driven*: mô hình chấm điểm từng khách và một hàm chọn ai nhận ưu đãi trong giới hạn ngân sách.
+
+```bash
+make dss       # sql/06 -> src/06_dss_model.py -> sql/07
+make figures   # vẽ lại biểu đồ báo cáo vào docs/figures/
+```
+
+**Vì sao là mô hình hazard.** `churn_flag` chỉ TRUE ở đúng kỳ cuối của 27.777 khách churn, và 27.777/27.778 khách rốt cuộc đều churn. Câu hỏi có ích không phải "ai sẽ churn" mà là "kỳ này có phải kỳ cuối không", tức hazard rời rạc `P(churn tại t | còn ở tới t)`. Hồi quy logistic trên các dòng kỳ cước ước lượng đúng đại lượng đó. Hazard gần như phẳng theo thâm niên (23–25%), nên thời gian sống còn lại xấp xỉ hình học với kỳ vọng `1/h ≈ 4,05` kỳ.
+
+| Đối tượng | Loại | Vai trò |
+|---|---|---|
+| `gold.dss_cycle_features` | view | 21 đặc trưng/kỳ, xử lý sentinel, lịch sử chỉ nhìn về quá khứ |
+| `gold.dss_churn_score` | bảng | `p_churn`, `rule_score`, `risk_band` cho mọi kỳ |
+| `gold.dss_model_eval` | bảng | AUC, Brier, lift/recall @10% và @20% trên giai đoạn kiểm tra |
+| `gold.dss_model_coef` | bảng | hệ số chuẩn hoá và odds ratio |
+| `gold.dss_policy_backtest` | bảng | % churn bắt được theo % khách tiếp cận, model vs rule vs random |
+| `gold.fn_retention_plan(month, budget, offer_cost, save_rate, margin)` | hàm | danh sách khách xếp theo lợi ích kỳ vọng, cột `selected` |
+| `gold.fn_retention_plan_summary(...)` | hàm | 1 dòng: chi phí, giá trị ròng kỳ vọng, ROI, precision/recall backtest |
+| `gold.dss_risk_band_monthly` | view | số khách, dự báo vs thực tế theo nhóm rủi ro mỗi tháng |
+
+**Đánh giá ngoài mẫu** (train: kỳ trước 2020-04, test: từ 2020-04, 48.172 kỳ):
+
+| Phương án | AUC | Lift@10% | Recall@20% |
+|---|---|---|---|
+| Hồi quy logistic | 0,709 | 2,10 | 37,4% |
+| Thẻ điểm luật (slide 16) | 0,659 | 1,82 | 32,4% |
+| Chỉ cờ "có liên hệ" | 0,573 | 1,17 | 22,6% |
+
+**Mô hình quyết định.** `gain = p_churn × save_rate × bill × margin / base_hazard − offer_cost`. Sắp giảm dần theo `gain`, lấy tới khi hết ngân sách hoặc `gain ≤ 0`. Mọi ưu đãi cùng giá nên thứ tự tham lam này là tối ưu.
+
+```sql
+-- Tháng 2020-04, ngân sách 20.000, ưu đãi 10/khách, giữ chân 30%
+SELECT * FROM gold.fn_retention_plan_summary('2020-04-01', 20000, 10, 0.30);
+-- 2.000 khách được chọn, 918 người thật sự churn (precision 45,9% so với nền 25,3%)
+```
+
+`save_rate` và `margin` là giả định, dữ liệu không đo được. Thứ tự ưu tiên không phụ thuộc chúng; con số tiền thì có. Dashboard **10 · DSS — Retention Planner** cho chỉnh 4 tham số (tháng, ngân sách, chi phí ưu đãi, tỷ lệ giữ chân) để chạy what-if.
+
 ---
 
 ## 12. Cấu trúc thư mục
@@ -499,7 +540,9 @@ Pipeline này phục vụ 5 quyết định cụ thể:
 │   ├── 02_silver_to_gold.sql       # ELT: silver → dim_* + fact_*
 │   ├── 03_marts.sql                # CREATE VIEW mart_*
 │   ├── 04_materialized_views.sql   # CREATE MATERIALIZED VIEW mv_*
-│   └── 05_olap_demos.sql           # 5 OLAP + CUBE bonus
+│   ├── 05_olap_demos.sql           # 5 OLAP + CUBE bonus
+│   ├── 06_dss_features.sql         # DSS: view đặc trưng cho mô hình
+│   └── 07_dss_decision.sql         # DSS: fn_retention_plan + summary
 │
 ├── src/
 │   ├── config.py               # paths, DATABASE_URL, BATCH_ID, to_snake_case()
@@ -508,10 +551,13 @@ Pipeline này phục vụ 5 quyết định cụ thể:
 │   ├── 02_run_sql.py           # chạy sql/01..02
 │   ├── 03_build_marts.py       # chạy sql/03..04
 │   ├── 04_validate.py          # 12 DQ rule → gold.dq_results
-│   └── 05_export_marts.py      # CSV + Parquet → exports/
+│   ├── 05_export_marts.py      # CSV + Parquet → exports/
+│   └── 06_dss_model.py         # DSS: hazard model, scorecard, backtest → gold.dss_*
 │
 ├── scripts/
-│   └── download_dataset.py     # hf_hub_download → data/raw/
+│   ├── download_dataset.py     # hf_hub_download → data/raw/
+│   ├── build_metabase_dashboards.py  # questions + 10 dashboards qua API
+│   └── make_report_figures.py  # biểu đồ báo cáo → docs/figures/
 │
 ├── data/                       # gitignored (trừ .gitkeep)
 │   ├── raw/telco_churn.csv

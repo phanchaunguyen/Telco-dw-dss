@@ -30,7 +30,7 @@ EXPORTS: list[tuple[str, str]] = [
     ),
     (
         "mart_churn_summary",
-        "SELECT * FROM gold.mart_churn_summary ORDER BY churn_flag, payment_status, issue_type, support_channel",
+        "SELECT * FROM gold.mart_churn_summary ORDER BY payment_status, issue_type, support_channel",
     ),
     # --- materialized views ----------------------------------------------
     ("mv_billing_monthly", "SELECT * FROM gold.mv_billing_monthly ORDER BY year, quarter, month"),
