@@ -30,7 +30,8 @@ PSQL := docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U $(DB_USER) -d
 
 .PHONY: help install up down reset reset-soft wait-db init-db \
         download profile bronze silver-gold marts refresh-mv \
-        olap-demo validate export dss figures metabase-dashboards all clean
+        olap-demo validate export dss figures screenshots \
+        metabase-dashboards all clean
 
 # ---------------------------------------------------------------------------
 help:  ## Show this help
@@ -134,6 +135,9 @@ dss:  ## DSS: feature view, churn hazard model, retention planner functions
 
 figures:  ## Render report charts from gold into docs/figures/
 	$(PY) scripts/make_report_figures.py
+
+screenshots:  ## Capture one PNG per Metabase dashboard into docs/screenshots/
+	$(PY) scripts/capture_dashboard_screenshots.py
 
 validate:  ## Run data-quality rules, write gold.dq_results
 	$(PY) src/04_validate.py
